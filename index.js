@@ -74,6 +74,7 @@ const db = connectedClient.db('goodPlanet');
 const eventsCollection = db.collection('events')
 const bookedEventsCollection = db.collection('bookedEvents')
 const savedEventsCollection = db.collection('savedEvents')
+const followsCollection = db.collection('follows')
 const waitlistCollection = db.collection('waitlist')
 
 // capacity is stored as a string/number; 0 / empty / invalid = unlimited
@@ -117,6 +118,9 @@ async function fillFromWaitlist(eventId) {
   return promoted;
 }
 
+// "today" in Bangladesh time (UTC+6) as YYYY-MM-DD, to compare with event.date strings
+const todayString = () => new Date(Date.now() + 6 * 3600 * 1000).toISOString().slice(0, 10);
+const orgKey = (name) => String(name || "").trim().toLowerCase();
 
 
 
@@ -557,6 +561,91 @@ app.delete("/saved/:eventId", verifyJWT, async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).send({ message: "Failed to unsave event" });
+  }
+});
+
+// ---------- Follow organizers ----------
+
+// following list (+ a bit of info about each organizer)
+app.get("/following", verifyJWT, async (req, res) => {
+  try {
+    const email = getEmail(req);
+    if (!email) return res.status(400).send({ message: "Email is required" });
+
+    const follows = await followsCollection.find({ email }).sort({ followedAt: -1 }).toArray();
+    const today = todayString();
+
+    const list = await Promise.all(
+      follows.map(async (f) => {
+        const [eventsCount, upcomingCount, followers] = await Promise.all([
+          eventsCollection.countDocuments({ organizer: f.organizer }),
+          eventsCollection.countDocuments({ organizer: f.organizer, date: { $gte: today } }),
+          followsCollection.countDocuments({ organizerKey: f.organizerKey }),
+        ]);
+        return { organizer: f.organizer, followedAt: f.followedAt, eventsCount, upcomingCount, followers };
+      })
+    );
+
+    res.send(list);
+  } catch (error) {
+    console.error(error);
+    res.status(500).send({ message: "Failed to load following list" });
+  }
+});
+
+// is the current user following this organizer + follower count
+app.get("/follow/status/:organizer", verifyJWT, async (req, res) => {
+  try {
+    const email = getEmail(req);
+    const key = orgKey(req.params.organizer);
+
+    const [mine, followers] = await Promise.all([
+      email ? followsCollection.findOne({ email, organizerKey: key }) : null,
+      followsCollection.countDocuments({ organizerKey: key }),
+    ]);
+
+    res.send({ following: Boolean(mine), followers });
+  } catch (error) {
+    console.error(error);
+    res.status(500).send({ message: "Failed to check follow status" });
+  }
+});
+
+app.post("/follow", verifyJWT, async (req, res) => {
+  try {
+    const email = getEmail(req) || req.body.email;
+    const organizer = String(req.body.organizer || "").trim();
+    if (!email || !organizer) {
+      return res.status(400).send({ message: "organizer is required" });
+    }
+
+    await followsCollection.updateOne(
+      { email, organizerKey: orgKey(organizer) },
+      { $setOnInsert: { email, organizer, organizerKey: orgKey(organizer), followedAt: new Date() } },
+      { upsert: true }
+    );
+
+    const followers = await followsCollection.countDocuments({ organizerKey: orgKey(organizer) });
+    res.status(201).send({ following: true, followers });
+  } catch (error) {
+    console.error(error);
+    res.status(500).send({ message: "Failed to follow organizer" });
+  }
+});
+
+app.delete("/follow/:organizer", verifyJWT, async (req, res) => {
+  try {
+    const email = getEmail(req);
+    if (!email) return res.status(400).send({ message: "Email is required" });
+
+    const key = orgKey(req.params.organizer);
+    await followsCollection.deleteOne({ email, organizerKey: key });
+
+    const followers = await followsCollection.countDocuments({ organizerKey: key });
+    res.send({ following: false, followers });
+  } catch (error) {
+    console.error(error);
+    res.status(500).send({ message: "Failed to unfollow organizer" });
   }
 });
 
