@@ -118,6 +118,7 @@ async function fillFromWaitlist(eventId) {
   return promoted;
 }
 
+const DEFAULT_VOLUNTEER_HOURS = 4;
 // "today" in Bangladesh time (UTC+6) as YYYY-MM-DD, to compare with event.date strings
 const todayString = () => new Date(Date.now() + 6 * 3600 * 1000).toISOString().slice(0, 10);
 const orgKey = (name) => String(name || "").trim().toLowerCase();
@@ -561,6 +562,69 @@ app.delete("/saved/:eventId", verifyJWT, async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).send({ message: "Failed to unsave event" });
+  }
+});
+
+// ---------- Profile stats + volunteer hours ----------
+
+app.get("/profile/stats", verifyJWT, async (req, res) => {
+  try {
+    const email = getEmail(req);
+    if (!email) return res.status(400).send({ message: "Email is required" });
+
+    const [bookings, created, saved, following] = await Promise.all([
+      bookedEventsCollection.find({ email }).toArray(),
+      eventsCollection.countDocuments({ email }),
+      savedEventsCollection.countDocuments({ email }),
+      followsCollection.countDocuments({ email }),
+    ]);
+
+    const ids = [...new Set(bookings.map((b) => b.eventId))]
+      .filter((id) => ObjectId.isValid(id))
+      .map((id) => new ObjectId(id));
+
+    const events = ids.length
+      ? await eventsCollection.find({ _id: { $in: ids } }).toArray()
+      : [];
+
+    const today = todayString();
+    let upcoming = 0;
+    let volunteerHours = 0;
+    const history = [];
+
+    for (const e of events) {
+      if (String(e.date ?? "") >= today) {
+        upcoming++;
+        continue;
+      }
+      // finished event -> counts as volunteered time
+      const hours = Number(e.hours) > 0 ? Number(e.hours) : DEFAULT_VOLUNTEER_HOURS;
+      volunteerHours += hours;
+      history.push({
+        eventId: String(e._id),
+        title: e.title,
+        category: e.category,
+        location: e.location,
+        date: e.date,
+        hours,
+      });
+    }
+
+    history.sort((a, b) => String(b.date).localeCompare(String(a.date)));
+
+    res.send({
+      joined: events.length,
+      upcoming,
+      completed: history.length,
+      created,
+      saved,
+      following,
+      volunteerHours,
+      history: history.slice(0, 20),
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).send({ message: "Failed to load profile stats" });
   }
 });
 
