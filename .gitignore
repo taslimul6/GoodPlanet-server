@@ -4,3 +4,4 @@ node_modules
 .kilo
 .vercel
 .env*
+!.env.example
