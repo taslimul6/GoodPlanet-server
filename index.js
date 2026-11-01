@@ -33,12 +33,6 @@ const eventsCollection = db.collection('events')
 
 
 
-
-
-
-
-
-
 app.get('/', async(req, res) => {
     const events = await eventsCollection.find().toArray();
     res.send(events);
@@ -72,10 +66,26 @@ app.get('/event/:id', async (req, res) => {
   }
 });
 
+app.post('/event' , async (req, res) => {
+
+
+  try{
+
+    const eventData = req.body;
+    const result = await eventsCollection.insertOne(eventData);
+    res.status(201).send(result);
+  } catch (err) {
+    res.status(500).send({
+      message: "Failed to create event",
+    });
+  }
+});
 
 
 
-console.log()
+
+
+
 
 
 app.listen(port, ()=>{
