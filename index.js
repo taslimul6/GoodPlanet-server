@@ -1,3 +1,5 @@
+
+
 import express from 'express';
 import dotenv from 'dotenv';
 import { MongoClient, ObjectId } from 'mongodb';
@@ -30,6 +32,7 @@ const connectedClient = await connectToMongoDB();
 
 const db = connectedClient.db('goodPlanet');
 const eventsCollection = db.collection('events')
+const bookedEventsCollection = db.collection('bookedEvents')
 
 
 
@@ -81,13 +84,161 @@ app.post('/event' , async (req, res) => {
   }
 });
 
+// Update event
+
+app.put("/event/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const eventData = req.body;
+
+    const result = await eventsCollection.updateOne(
+      { _id: new ObjectId(id) },
+      {
+        $set: eventData,
+      }
+    );
+
+    if (result.matchedCount === 0) {
+      return res.status(404).send({
+        message: "Event not found",
+      });
+    }
+
+    res.send({
+      message: "Event updated successfully",
+      result,
+    });
+  } catch (error) {
+    console.error("Error updating event:", error);
+
+    res.status(500).send({
+      message: "Failed to update event",
+    });
+  }
+});
+
+//delete event
+
+app.delete('/event/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = await eventsCollection.deleteOne({ _id: new ObjectId(id) });
+    res.send(result);
+  } catch (err) {
+    res.status(500).send({
+      message: "Failed to delete event",
+    });
+  }
+});
+
+//check if joined event
+
+app.get("/event/joined/check", async (req, res) => {
+  try {
+    const { eventId, email } = JSON.parse(req.headers.query);
+
+    console.log("Received eventId:", eventId, email);
+
+    const event = await bookedEventsCollection.findOne({
+      eventId: eventId,
+      email: email,
+    });
+
+    if (event) {
+      res.send({ joined: true });
+    } else {
+      res.send({ joined: false });
+    }
+  } catch (error) {
+    console.error(error);
+    res.status(500).send({ message: "Server error" });
+  }
+});
 
 
 
+// Join event
 
 
+app.post("/event/join", async (req, res) => {
+  try {
+    // Check if already joined
+    const existingBooking = await bookedEventsCollection.findOne({
+      eventId: req.body.eventId,
+      email: req.body.email,
+    });
+
+    if (existingBooking) {
+      return res.status(409).send({
+        message: "You have already joined this event.",
+      });
+    }
+
+    // Create booking
+    const result = await bookedEventsCollection.insertOne({
+      ...req.body
+    });
+
+    res.status(201).send({
+      message: "Successfully joined the event.",
+      result,
+    });
+
+  } catch (err) {
+    console.error(err);
+
+    res.status(500).send({
+      message: "Failed to join event.",
+    });
+  }
+});
 
 
-app.listen(port, ()=>{
+//list of joined events
+
+app.get("/bookedEvents", async (req, res) => {
+
+  console.log("Received query:");
+
+ 
+  try {
+    const email = req.headers.query;
+
+
+    const joinedEvents = await bookedEventsCollection
+      .find({ email })
+      .toArray();
+
+    res.send(joinedEvents);
+  } catch (error) {
+    console.error(error);
+
+    res.status(500).send({
+      message: "Server error",
+    });
+  }
+});
+
+
+//my events
+
+
+app.get('/myEvents', async (req, res) => {
+  try {
+    const email = req.headers.query;
+    console.log("Received email1:", email);
+
+    const myEvents = await eventsCollection.find({ email }).toArray();
+    res.send(myEvents);
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).send({
+      message: "Server error",
+    });
+  }
+});
+
+app.listen(port, () => {
     console.log(`Server is running on port ${port}`);
-})
+});
