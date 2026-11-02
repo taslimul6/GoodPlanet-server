@@ -55,7 +55,7 @@ const client = new MongoClient(process.env.MONGODB_URI);
 
 export async function connectToMongoDB() {
   try {
-    await client.connect();
+    // await client.connect();
     console.log("You successfully connected to MongoDB!");
     return client;
   } catch (err) {
@@ -283,4 +283,3 @@ if (!process.env.VERCEL) {
 }
 
 export default app;
-export { app };
