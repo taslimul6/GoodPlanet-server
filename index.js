@@ -4,6 +4,7 @@ import express from 'express';
 import dotenv from 'dotenv';
 import { MongoClient, ObjectId } from 'mongodb';
 import cors from 'cors';
+import { createRemoteJWKSet, jwtVerify } from "jose";
 
 dotenv.config();
 
@@ -13,6 +14,40 @@ const port= 5000;
 
 app.use(cors());
 app.use(express.json())
+
+
+//jwt varify
+
+const verifyJWT = async (req, res, next) => {
+  const authHeader = req.headers.authorization;
+
+  if (!authHeader) {
+    return res.status(401).send({
+      message: "Authorization header is missing",
+    });
+  }
+
+  const token = authHeader.split(" ")[1];
+
+  if (!token) {
+    return res.status(401).send({
+      message: "Token is missing",
+    });
+  }
+
+  const jwks = createRemoteJWKSet(new URL(`${process.env.CLIENT_URL}/api/auth/jwks`));
+
+  try{
+    const {payload} = await jwtVerify(token, jwks);
+    next();
+
+  }catch (err) {
+    console.error("JWT verification error:", err);
+    return res.status(401).send({
+      message: "Invalid or expired token",
+    });
+  }
+};
 
 //db connection
 
@@ -36,17 +71,17 @@ const bookedEventsCollection = db.collection('bookedEvents')
 
 
 
-app.get('/', async(req, res) => {
+app.get('/',verifyJWT, async(req, res) => {
     const events = await eventsCollection.find().toArray();
     res.send(events);
 });
 
-app.get('/featured', async(req, res) => {
+app.get('/featured', verifyJWT, async(req, res) => {
     const events = await eventsCollection.find().limit(6).toArray();
     res.send(events);
 });
 
-app.get('/event/:id', async (req, res) => {
+app.get('/event/:id', verifyJWT, async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -69,8 +104,10 @@ app.get('/event/:id', async (req, res) => {
   }
 });
 
-app.post('/event' , async (req, res) => {
 
+//add event
+
+app.post('/event' , verifyJWT, async (req, res) => {
 
   try{
 
@@ -86,7 +123,7 @@ app.post('/event' , async (req, res) => {
 
 // Update event
 
-app.put("/event/:id", async (req, res) => {
+app.put("/event/:id", verifyJWT, async (req, res) => {
   try {
     const { id } = req.params;
     const eventData = req.body;
@@ -109,7 +146,7 @@ app.put("/event/:id", async (req, res) => {
       result,
     });
   } catch (error) {
-    console.error("Error updating event:", error);
+    
 
     res.status(500).send({
       message: "Failed to update event",
@@ -119,7 +156,7 @@ app.put("/event/:id", async (req, res) => {
 
 //delete event
 
-app.delete('/event/:id', async (req, res) => {
+app.delete('/event/:id',verifyJWT,  async (req, res) => {
   try {
     const { id } = req.params;
     const result = await eventsCollection.deleteOne({ _id: new ObjectId(id) });
@@ -133,7 +170,7 @@ app.delete('/event/:id', async (req, res) => {
 
 //check if joined event
 
-app.get("/event/joined/check", async (req, res) => {
+app.get("/event/joined/check", verifyJWT, async (req, res) => {
   try {
     const { eventId, email } = JSON.parse(req.headers.query);
 
@@ -160,7 +197,7 @@ app.get("/event/joined/check", async (req, res) => {
 // Join event
 
 
-app.post("/event/join", async (req, res) => {
+app.post("/event/join", verifyJWT, async (req, res) => {
   try {
     // Check if already joined
     const existingBooking = await bookedEventsCollection.findOne({
@@ -196,7 +233,7 @@ app.post("/event/join", async (req, res) => {
 
 //list of joined events
 
-app.get("/bookedEvents", async (req, res) => {
+app.get("/bookedEvents", verifyJWT, async (req, res) => {
 
   console.log("Received query:");
 
@@ -223,7 +260,7 @@ app.get("/bookedEvents", async (req, res) => {
 //my events
 
 
-app.get('/myEvents', async (req, res) => {
+app.get('/myEvents', verifyJWT, async (req, res) => {
   try {
     const email = req.headers.query;
     console.log("Received email1:", email);
