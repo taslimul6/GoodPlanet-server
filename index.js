@@ -71,7 +71,7 @@ const bookedEventsCollection = db.collection('bookedEvents')
 
 
 
-app.get('/',verifyJWT, async(req, res) => {
+app.get('/', async(req, res) => {
     const events = await eventsCollection.find().toArray();
     res.send(events);
 });
