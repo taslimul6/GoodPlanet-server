@@ -199,6 +199,8 @@ app.get("/event/joined/check", verifyJWT, async (req, res) => {
 
 app.post("/event/join", verifyJWT, async (req, res) => {
   try {
+
+    console.log("hello", req.body)
     // Check if already joined
     const existingBooking = await bookedEventsCollection.findOne({
       eventId: req.body.eventId,
@@ -211,7 +213,7 @@ app.post("/event/join", verifyJWT, async (req, res) => {
       });
     }
 
-    // Create booking
+    //Create booking
     const result = await bookedEventsCollection.insertOne({
       ...req.body
     });
