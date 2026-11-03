@@ -56,7 +56,7 @@ const client = new MongoClient(process.env.MONGODB_URI);
 export async function connectToMongoDB() {
   try {
     // await client.connect();
-    console.log("You successfully connected to MongoDB!");
+   
     return client;
   } catch (err) {
     console.dir(err);
@@ -76,7 +76,7 @@ app.get('/', async(req, res) => {
     res.send(events);
 });
 
-app.get('/featured', verifyJWT, async(req, res) => {
+app.get('/featured', async(req, res) => {
     const events = await eventsCollection.find().limit(6).toArray();
     res.send(events);
 });
