@@ -174,7 +174,7 @@ app.get("/event/joined/check", verifyJWT, async (req, res) => {
   try {
     const { eventId, email } = JSON.parse(req.headers.query);
 
-    console.log("Received eventId:", eventId, email);
+    
 
     const event = await bookedEventsCollection.findOne({
       eventId: eventId,
@@ -192,7 +192,20 @@ app.get("/event/joined/check", verifyJWT, async (req, res) => {
   }
 });
 
+//check booking count
 
+app.get('/booked/:id', verifyJWT, async(req, res)=>{
+
+  try{
+
+     const { id } = req.params;
+     const events = await bookedEventsCollection.find({eventId : id}).toArray();
+     res.send(events);
+  }catch(err){
+    res.status(401).send({message: 'api not found'})
+  }
+
+});
 
 // Join event
 
