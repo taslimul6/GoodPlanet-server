@@ -39,6 +39,7 @@ const verifyJWT = async (req, res, next) => {
 
   try{
     const {payload} = await jwtVerify(token, jwks);
+    req.user = payload;
     next();
 
   }catch (err) {
@@ -48,6 +49,10 @@ const verifyJWT = async (req, res, next) => {
     });
   }
 };
+
+// Prefer the email inside the verified JWT; fall back to the `query` header
+// (older endpoints send the email that way).
+const getEmail = (req) => req.user?.email || req.headers.query;
 
 //db connection
 
