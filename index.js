@@ -73,6 +73,7 @@ const connectedClient = await connectToMongoDB();
 const db = connectedClient.db('goodPlanet');
 const eventsCollection = db.collection('events')
 const bookedEventsCollection = db.collection('bookedEvents')
+const savedEventsCollection = db.collection('savedEvents')
 
 
 
@@ -276,6 +277,87 @@ app.get("/bookedEvents", verifyJWT, async (req, res) => {
   }
 });
 
+
+// ---------- Saved / bookmarked events ----------
+
+// list saved events (full event docs) for an email
+app.get("/saved", verifyJWT, async (req, res) => {
+  try {
+    const email = getEmail(req);
+    if (!email) return res.status(400).send({ message: "Email is required" });
+
+    const saved = await savedEventsCollection
+      .find({ email })
+      .sort({ savedAt: -1 })
+      .toArray();
+
+    const ids = saved
+      .map((s) => s.eventId)
+      .filter((id) => ObjectId.isValid(id))
+      .map((id) => new ObjectId(id));
+
+    const events = ids.length
+      ? await eventsCollection.find({ _id: { $in: ids } }).toArray()
+      : [];
+
+    // keep "most recently saved first" order
+    const byId = new Map(events.map((e) => [String(e._id), e]));
+    res.send(saved.map((s) => byId.get(String(s.eventId))).filter(Boolean));
+  } catch (error) {
+    console.error(error);
+    res.status(500).send({ message: "Failed to fetch saved events" });
+  }
+});
+
+// only the saved event ids (cheap check for lists)
+app.get("/saved/ids", verifyJWT, async (req, res) => {
+  try {
+    const email = getEmail(req);
+    if (!email) return res.status(400).send({ message: "Email is required" });
+
+    const saved = await savedEventsCollection.find({ email }).toArray();
+    res.send(saved.map((s) => s.eventId));
+  } catch (error) {
+    console.error(error);
+    res.status(500).send({ message: "Failed to fetch saved ids" });
+  }
+});
+
+// save an event
+app.post("/saved", verifyJWT, async (req, res) => {
+  try {
+    const { eventId } = req.body;
+    const email = getEmail(req) || req.body.email;
+    if (!eventId || !email) {
+      return res.status(400).send({ message: "eventId and email are required" });
+    }
+
+    await savedEventsCollection.updateOne(
+      { eventId, email },
+      { $setOnInsert: { eventId, email, savedAt: new Date() } },
+      { upsert: true }
+    );
+
+    res.status(201).send({ saved: true });
+  } catch (error) {
+    console.error(error);
+    res.status(500).send({ message: "Failed to save event" });
+  }
+});
+
+// unsave an event
+app.delete("/saved/:eventId", verifyJWT, async (req, res) => {
+  try {
+    const email = getEmail(req);
+    if (!email) return res.status(400).send({ message: "Email is required" });
+
+    await savedEventsCollection.deleteOne({ eventId: req.params.eventId, email });
+    res.send({ saved: false });
+  } catch (error) {
+    console.error(error);
+    res.status(500).send({ message: "Failed to unsave event" });
+  }
+});
 
 //my events
 
