@@ -122,12 +122,12 @@ async function fillFromWaitlist(eventId) {
 
 app.get('/', async(req, res) => {
     const events = await eventsCollection.find().toArray();
-    res.send(events);
+    res.send(await withCounts(events));
 });
 
 app.get('/featured', async(req, res) => {
     const events = await eventsCollection.find().limit(6).toArray();
-    res.send(events);
+    res.send(await withCounts(events));
 });
 
 app.get('/event/:id', verifyJWT, async (req, res) => {
