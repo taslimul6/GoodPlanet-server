@@ -74,6 +74,49 @@ const db = connectedClient.db('goodPlanet');
 const eventsCollection = db.collection('events')
 const bookedEventsCollection = db.collection('bookedEvents')
 const savedEventsCollection = db.collection('savedEvents')
+const waitlistCollection = db.collection('waitlist')
+
+// capacity is stored as a string/number; 0 / empty / invalid = unlimited
+const capacityOf = (event) => {
+  const n = Number(event?.capacity);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+};
+
+// attach `bookedCount` (how many people joined) to each event with ONE query
+async function withCounts(events) {
+  const counts = await bookedEventsCollection
+    .aggregate([{ $group: { _id: "$eventId", n: { $sum: 1 } } }])
+    .toArray();
+  const byId = new Map(counts.map((c) => [String(c._id), c.n]));
+  return events.map((e) => ({ ...e, bookedCount: byId.get(String(e._id)) ?? 0 }));
+}
+
+// Move people from the waitlist into the event while there is free space.
+// Called when someone cancels, or when the organizer raises the capacity.
+async function fillFromWaitlist(eventId) {
+  if (!ObjectId.isValid(eventId)) return 0;
+  const event = await eventsCollection.findOne({ _id: new ObjectId(eventId) });
+  if (!event) return 0;
+
+  const cap = capacityOf(event);
+  const { _id, email: _owner, participants, ...snapshot } = event;
+  let promoted = 0;
+
+  while (true) {
+    if (cap > 0 && (await bookedEventsCollection.countDocuments({ eventId })) >= cap) break;
+
+    const next = await waitlistCollection.findOneAndDelete({ eventId }, { sort: { createdAt: 1 } });
+    if (!next) break;
+
+    const already = await bookedEventsCollection.findOne({ eventId, email: next.email });
+    if (!already) {
+      await bookedEventsCollection.insertOne({ ...snapshot, eventId, email: next.email });
+      promoted++;
+    }
+  }
+  return promoted;
+}
+
 
 
 
