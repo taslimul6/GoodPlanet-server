@@ -275,10 +275,31 @@ app.post("/event/join", verifyJWT, async (req, res) => {
       });
     }
 
+    // Capacity check
+    const { eventId } = req.body;
+    const event = ObjectId.isValid(eventId)
+      ? await eventsCollection.findOne({ _id: new ObjectId(eventId) })
+      : null;
+    const cap = capacityOf(event);
+
+    if (cap > 0 && (await bookedEventsCollection.countDocuments({ eventId })) >= cap) {
+      return res.status(409).send({ message: "This event is full.", full: true });
+    }
+
     //Create booking
     const result = await bookedEventsCollection.insertOne({
       ...req.body
     });
+
+    // Two people can pass the check above at the same moment, so count again
+    // and undo this booking if it pushed the event over capacity.
+    if (cap > 0 && (await bookedEventsCollection.countDocuments({ eventId })) > cap) {
+      await bookedEventsCollection.deleteOne({ _id: result.insertedId });
+      return res.status(409).send({ message: "This event is full.", full: true });
+    }
+
+    // joined directly -> no longer waiting
+    await waitlistCollection.deleteOne({ eventId, email: req.body.email });
 
     res.status(201).send({
       message: "Successfully joined the event.",
