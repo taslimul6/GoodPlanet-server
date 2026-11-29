@@ -316,6 +316,33 @@ app.post("/event/join", verifyJWT, async (req, res) => {
 });
 
 
+// Cancel join (leave an event)
+// NOTE: two path segments on purpose, so it doesn't clash with DELETE /event/:id
+
+app.delete("/event/join/:eventId", verifyJWT, async (req, res) => {
+  try {
+    const email = getEmail(req);
+    if (!email) return res.status(400).send({ message: "Email is required" });
+
+    const result = await bookedEventsCollection.deleteOne({
+      eventId: req.params.eventId,
+      email,
+    });
+
+    if (result.deletedCount === 0) {
+      return res.status(404).send({ message: "You have not joined this event." });
+    }
+
+    // a spot just opened up -> first person on the waitlist gets it
+    const promoted = await fillFromWaitlist(req.params.eventId);
+
+    res.send({ message: "Successfully cancelled your participation.", promoted });
+  } catch (err) {
+    console.error(err);
+    res.status(500).send({ message: "Failed to cancel participation." });
+  }
+});
+
 //list of joined events
 
 app.get("/bookedEvents", verifyJWT, async (req, res) => {
