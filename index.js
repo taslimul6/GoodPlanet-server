@@ -343,6 +343,102 @@ app.delete("/event/join/:eventId", verifyJWT, async (req, res) => {
   }
 });
 
+// ---------- Capacity + waitlist ----------
+
+// everything the event page needs in one call
+app.get("/event/capacity/:id", verifyJWT, async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!ObjectId.isValid(id)) return res.status(404).send({ message: "Event not found" });
+
+    const event = await eventsCollection.findOne({ _id: new ObjectId(id) });
+    if (!event) return res.status(404).send({ message: "Event not found" });
+
+    const email = getEmail(req);
+    const capacity = capacityOf(event);
+
+    const [joined, waitlistCount, mine, myWait] = await Promise.all([
+      bookedEventsCollection.countDocuments({ eventId: id }),
+      waitlistCollection.countDocuments({ eventId: id }),
+      email ? bookedEventsCollection.findOne({ eventId: id, email }) : null,
+      email ? waitlistCollection.findOne({ eventId: id, email }) : null,
+    ]);
+
+    const position = myWait
+      ? (await waitlistCollection.countDocuments({
+          eventId: id,
+          createdAt: { $lte: myWait.createdAt },
+        }))
+      : null;
+
+    res.send({
+      capacity, // 0 = unlimited
+      joined,
+      spotsLeft: capacity > 0 ? Math.max(0, capacity - joined) : null,
+      full: capacity > 0 && joined >= capacity,
+      joinedByMe: Boolean(mine),
+      onWaitlist: Boolean(myWait),
+      position,
+      waitlistCount,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).send({ message: "Failed to load capacity" });
+  }
+});
+
+app.post("/event/waitlist", verifyJWT, async (req, res) => {
+  try {
+    const email = getEmail(req) || req.body.email;
+    const { eventId } = req.body;
+    if (!email || !ObjectId.isValid(eventId)) {
+      return res.status(400).send({ message: "eventId is required" });
+    }
+
+    const event = await eventsCollection.findOne({ _id: new ObjectId(eventId) });
+    if (!event) return res.status(404).send({ message: "Event not found" });
+
+    if (await bookedEventsCollection.findOne({ eventId, email })) {
+      return res.status(409).send({ message: "You have already joined this event." });
+    }
+
+    const cap = capacityOf(event);
+    if (cap === 0 || (await bookedEventsCollection.countDocuments({ eventId })) < cap) {
+      return res.status(409).send({ message: "There is space, you can join directly." });
+    }
+
+    await waitlistCollection.updateOne(
+      { eventId, email },
+      { $setOnInsert: { eventId, email, createdAt: new Date() } },
+      { upsert: true }
+    );
+
+    const mine = await waitlistCollection.findOne({ eventId, email });
+    const position = await waitlistCollection.countDocuments({
+      eventId,
+      createdAt: { $lte: mine.createdAt },
+    });
+
+    res.status(201).send({ onWaitlist: true, position });
+  } catch (err) {
+    console.error(err);
+    res.status(500).send({ message: "Failed to join waitlist" });
+  }
+});
+
+app.delete("/event/waitlist/:eventId", verifyJWT, async (req, res) => {
+  try {
+    const email = getEmail(req);
+    if (!email) return res.status(400).send({ message: "Email is required" });
+
+    await waitlistCollection.deleteOne({ eventId: req.params.eventId, email });
+    res.send({ onWaitlist: false });
+  } catch (err) {
+    console.error(err);
+    res.status(500).send({ message: "Failed to leave waitlist" });
+  }
+});
+
 //list of joined events
 
 app.get("/bookedEvents", verifyJWT, async (req, res) => {
