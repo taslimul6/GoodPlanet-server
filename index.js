@@ -190,9 +190,13 @@ app.put("/event/:id", verifyJWT, async (req, res) => {
       });
     }
 
+    // capacity may have been raised -> let waitlisted people in
+    const promoted = await fillFromWaitlist(id);
+
     res.send({
       message: "Event updated successfully",
       result,
+      promoted,
     });
   } catch (error) {
     
@@ -209,6 +213,16 @@ app.delete('/event/:id',verifyJWT,  async (req, res) => {
   try {
     const { id } = req.params;
     const result = await eventsCollection.deleteOne({ _id: new ObjectId(id) });
+
+    // clean up everything that points to the deleted event
+    if (result.deletedCount > 0) {
+      await Promise.all([
+        bookedEventsCollection.deleteMany({ eventId: id }),
+        savedEventsCollection.deleteMany({ eventId: id }),
+        waitlistCollection.deleteMany({ eventId: id }),
+      ]);
+    }
+
     res.send(result);
   } catch (err) {
     res.status(500).send({
